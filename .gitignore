@@ -1,0 +1,18 @@
+# Spring Boot
+target/
+*.log
+
+# Secrets
+src/main/resources/application.properties
+src/main/resources/application.yml
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
