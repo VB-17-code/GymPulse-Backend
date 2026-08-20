@@ -33,9 +33,8 @@ protected boolean shouldNotFilter(
         HttpServletRequest request
 ) {
 
-    return request
-            .getRequestURI()
-            .startsWith("/auth/");
+    return request.getMethod().equalsIgnoreCase("OPTIONS")
+        || request.getRequestURI().startsWith("/auth/");
 }
 
 

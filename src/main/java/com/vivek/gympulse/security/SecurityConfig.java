@@ -32,21 +32,25 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
 
-        CorsConfiguration configuration = new CorsConfiguration();
-
-       // configuration.setAllowedOrigins(
-         //       List.of("http://localhost:5173")
-        //);
+        CorsConfiguration configuration =
+                new CorsConfiguration();
 
         configuration.setAllowedOrigins(
-    List.of(
-        "http://localhost:5173",
-        "http://localhost:5174"
-    )
-);
+                List.of(
+                        "http://localhost:5173",
+                        "http://localhost:5174",
+                        "https://gympulse-frontend.vercel.app"
+                )
+        );
 
         configuration.setAllowedMethods(
-                List.of("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                List.of(
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "DELETE",
+                        "OPTIONS"
+                )
         );
 
         configuration.setAllowedHeaders(
@@ -58,62 +62,57 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
 
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration(
+                "/**",
+                configuration
+        );
 
         return source;
     }
 
     @Bean
-SecurityFilterChain securityFilterChain(HttpSecurity http)
-        throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http
+    ) throws Exception {
 
-    http
+        http
 
-        // Enable CORS
-        .cors(Customizer.withDefaults())
+            .cors(Customizer.withDefaults())
 
-        // Disable CSRF because we use JWT
-        .csrf(csrf -> csrf.disable())
+            .csrf(csrf -> csrf.disable())
 
-        // Stateless JWT authentication
-        .sessionManagement(session ->
-                session.sessionCreationPolicy(
-                        SessionCreationPolicy.STATELESS
-                )
-        )
+            .sessionManagement(session ->
+                    session.sessionCreationPolicy(
+                            SessionCreationPolicy.STATELESS
+                    )
+            )
 
-        .authorizeHttpRequests(auth -> auth
+            .authorizeHttpRequests(auth -> auth
 
-                // Allow CORS preflight requests
-                .requestMatchers(
-                        org.springframework.http.HttpMethod.OPTIONS,
-                        "/**"
-                )
-                .permitAll()
+                    .requestMatchers(
+                            org.springframework.http.HttpMethod.OPTIONS,
+                            "/**"
+                    )
+                    .permitAll()
 
-                // Public authentication endpoints
-                .requestMatchers(
-                        "/auth/login",
-                        "/auth/signup",
-                        "/auth/forgot-password",
-                        "/auth/verify-otp",
-                        "/auth/reset-password"
-                )
-                .permitAll()
+                    .requestMatchers(
+                            "/auth/login",
+                            "/auth/signup",
+                            "/auth/forgot-password",
+                            "/auth/verify-otp",
+                            "/auth/reset-password"
+                    )
+                    .permitAll()
 
-                // Everything else requires JWT
-                .anyRequest()
-                .authenticated()
-        )
+                    .anyRequest()
+                    .authenticated()
+            )
 
-        // JWT filter
-        .addFilterBefore(
-                jwtFilter,
-                UsernamePasswordAuthenticationFilter.class
-        );
+            .addFilterBefore(
+                    jwtFilter,
+                    UsernamePasswordAuthenticationFilter.class
+            );
 
-    return http.build();
-
-}
-
+        return http.build();
+    }
 }
