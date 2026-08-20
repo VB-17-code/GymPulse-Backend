@@ -114,6 +114,6 @@ SecurityFilterChain securityFilterChain(HttpSecurity http)
 
     return http.build();
 
-    }
+}
 
 }
