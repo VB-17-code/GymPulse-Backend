@@ -1,43 +1,57 @@
 package com.vivek.gympulse.service;
 
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import lombok.RequiredArgsConstructor;
+import com.resend.Resend;
+import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.CreateEmailOptions;
 
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final Resend resend;
+
+    public EmailService(
+            @Value("${RESEND_API_KEY}") String apiKey
+    ) {
+        this.resend = new Resend(apiKey);
+    }
 
     public void sendOtpEmail(
             String email,
             String otp
     ) {
 
-        SimpleMailMessage message =
-                new SimpleMailMessage();
+        CreateEmailOptions emailOptions =
+                CreateEmailOptions.builder()
+                        .from("GymPulse <onboarding@resend.dev>")
+                        .to(email)
+                        .subject("GymPulse - Password Reset OTP")
+                        .html(
+                                "<h2>GymPulse Password Reset</h2>"
+                                + "<p>Hello,</p>"
+                                + "<p>Your GymPulse password reset OTP is:</p>"
+                                + "<h1>" + otp + "</h1>"
+                                + "<p>This OTP is valid for <b>5 minutes</b>.</p>"
+                                + "<p>If you did not request a password reset, "
+                                + "please ignore this email.</p>"
+                                + "<br>"
+                                + "<p>Regards,<br>GymPulse Team</p>"
+                        )
+                        .build();
 
-        message.setTo(email);
+        try {
 
-        message.setSubject(
-                "GymPulse - Password Reset OTP"
-        );
+            resend.emails().send(emailOptions);
 
-        message.setText(
-                "Hello,\n\n"
-                + "Your GymPulse password reset OTP is:\n\n"
-                + otp
-                + "\n\n"
-                + "This OTP is valid for 5 minutes.\n\n"
-                + "If you did not request a password reset, "
-                + "please ignore this email.\n\n"
-                + "Regards,\n"
-                + "GymPulse Team"
-        );
+        } catch (ResendException e) {
 
-        mailSender.send(message);
+            throw new RuntimeException(
+                    "Failed to send OTP email: " + e.getMessage(),
+                    e
+            );
+
+        }
     }
 }
