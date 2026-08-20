@@ -64,39 +64,56 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http)
-            throws Exception {
+SecurityFilterChain securityFilterChain(HttpSecurity http)
+        throws Exception {
 
-        http
+    http
 
-                .cors(Customizer.withDefaults())
+        // Enable CORS
+        .cors(Customizer.withDefaults())
 
-                .csrf(csrf -> csrf.disable())
+        // Disable CSRF because we use JWT
+        .csrf(csrf -> csrf.disable())
 
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                .authorizeHttpRequests(auth -> auth
-
-        .requestMatchers(
-                "/auth/login",
-                "/auth/signup",
-                "/auth/forgot-password",
-                "/auth/verify-otp",
-                "/auth/reset-password"
+        // Stateless JWT authentication
+        .sessionManagement(session ->
+                session.sessionCreationPolicy(
+                        SessionCreationPolicy.STATELESS
+                )
         )
-        .permitAll()
 
-        .anyRequest()
-        .authenticated()
-)
+        .authorizeHttpRequests(auth -> auth
 
-                .addFilterBefore(
-                        jwtFilter,
-                        UsernamePasswordAuthenticationFilter.class
-                );
+                // Allow CORS preflight requests
+                .requestMatchers(
+                        org.springframework.http.HttpMethod.OPTIONS,
+                        "/**"
+                )
+                .permitAll()
 
-        return http.build();
+                // Public authentication endpoints
+                .requestMatchers(
+                        "/auth/login",
+                        "/auth/signup",
+                        "/auth/forgot-password",
+                        "/auth/verify-otp",
+                        "/auth/reset-password"
+                )
+                .permitAll()
+
+                // Everything else requires JWT
+                .anyRequest()
+                .authenticated()
+        )
+
+        // JWT filter
+        .addFilterBefore(
+                jwtFilter,
+                UsernamePasswordAuthenticationFilter.class
+        );
+
+    return http.build();
+
     }
 
 }
