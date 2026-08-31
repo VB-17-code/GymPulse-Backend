@@ -1,6 +1,5 @@
 package com.vivek.gympulse.auth.service;
 
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,7 +21,7 @@ import com.vivek.gympulse.repository.PasswordResetOtpRepository;
 import com.vivek.gympulse.repository.UserRepository;
 
 import com.vivek.gympulse.security.JwtService;
-import com.vivek.gympulse.service.EmailService;
+import com.vivek.gympulse.service.MubaroService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -38,10 +37,7 @@ public class AuthService {
 
     private final PasswordResetOtpRepository otpRepository;
 
-    private final EmailService emailService;
-
-    private final SecureRandom secureRandom =
-            new SecureRandom();
+    private final MubaroService mubaroService;
 
 
     // =====================================================
@@ -54,14 +50,12 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-
         if (repository.findByEmail(email).isPresent()) {
 
             throw new RuntimeException(
                     "Email already exists"
             );
         }
-
 
         User user = User.builder()
 
@@ -84,9 +78,7 @@ public class AuthService {
 
                 .build();
 
-
         repository.save(user);
-
 
         return "User Registered Successfully";
     }
@@ -104,16 +96,13 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-
         User user = repository
                 .findByEmail(email)
-
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "User not found"
                         )
                 );
-
 
         if (!encoder.matches(
                 request.getPassword(),
@@ -125,12 +114,10 @@ public class AuthService {
             );
         }
 
-
         String token =
                 jwtService.generateToken(
                         user.getEmail()
                 );
-
 
         return AuthResponse.builder()
 
@@ -158,13 +145,11 @@ public class AuthService {
 
         User user = repository
                 .findByEmail(email)
-
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "User not found"
                         )
                 );
-
 
         // Check current password
 
@@ -178,7 +163,6 @@ public class AuthService {
             );
         }
 
-
         // Validate new password
 
         if (request.getNewPassword() == null ||
@@ -191,14 +175,12 @@ public class AuthService {
             );
         }
 
-
         if (request.getNewPassword().length() < 6) {
 
             throw new RuntimeException(
                     "New password must be at least 6 characters"
             );
         }
-
 
         // Encode new password
 
@@ -208,9 +190,7 @@ public class AuthService {
                 )
         );
 
-
         repository.save(user);
-
 
         return "Password changed successfully";
     }
@@ -218,7 +198,7 @@ public class AuthService {
 
     // =====================================================
     // FORGOT PASSWORD
-    // SEND OTP
+    // SEND OTP USING MUBARO
     // =====================================================
 
     @Transactional
@@ -230,60 +210,34 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-
         // Check user exists
 
         repository.findByEmail(email)
-
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "No account found with this email"
                         )
                 );
 
-
-        // Generate 6 digit OTP
-
-        String otp = String.format(
-                "%06d",
-                secureRandom.nextInt(1_000_000)
-        );
-
-
-        // Delete previous OTP
+        // Remove any previous verification state
 
         otpRepository.deleteByEmail(email);
 
+        /*
+         * Mubaro generates the OTP and sends it
+         * directly to the user's email.
+         */
+        try {
 
-        // Create new OTP
+            mubaroService.sendOtp(email);
 
-        PasswordResetOtp resetOtp =
-                PasswordResetOtp.builder()
+        } catch (Exception e) {
 
-                        .email(email)
-
-                        .otp(otp)
-
-                        .expiresAt(
-                                LocalDateTime.now()
-                                        .plusMinutes(5)
-                        )
-
-                        .build();
-
-
-        // Save OTP
-
-        otpRepository.save(resetOtp);
-
-
-        // Send OTP email
-
-        emailService.sendOtpEmail(
-                email,
-                otp
-        );
-
+            throw new RuntimeException(
+                    "Failed to send OTP: "
+                            + e.getMessage()
+            );
+        }
 
         return "OTP sent successfully";
     }
@@ -291,6 +245,7 @@ public class AuthService {
 
     // =====================================================
     // VERIFY OTP
+    // MUBARO VERIFICATION
     // =====================================================
 
     @Transactional
@@ -302,46 +257,64 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-
         String otp = request.getOtp()
                 .trim();
 
+        // Check user exists
 
-        // Find latest OTP
+        repository.findByEmail(email)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "No account found with this email"
+                        )
+                );
 
-        PasswordResetOtp resetOtp =
-                otpRepository
-                        .findTopByEmailOrderByIdDesc(email)
+        /*
+         * Mubaro verifies the OTP.
+         *
+         * Important:
+         * Mubaro OTPs should not be verified twice.
+         */
+        try {
 
-                        .orElseThrow(
-                                () -> new RuntimeException(
-                                        "OTP not found"
-                                )
-                        );
+            mubaroService.verifyOtp(
+                    email,
+                    otp
+            );
 
-
-        // Check expiry
-
-        if (resetOtp.getExpiresAt()
-                .isBefore(LocalDateTime.now())) {
-
-            otpRepository.delete(resetOtp);
+        } catch (Exception e) {
 
             throw new RuntimeException(
-                    "OTP has expired"
+                    "Invalid or expired OTP"
             );
         }
 
+        /*
+         * OTP is successfully verified.
+         *
+         * Store only a temporary VERIFIED marker
+         * in our database.
+         *
+         * We do NOT store the actual OTP.
+         */
 
-        // Check OTP
+        otpRepository.deleteByEmail(email);
 
-        if (!resetOtp.getOtp().equals(otp)) {
+        PasswordResetOtp verifiedState =
+                PasswordResetOtp.builder()
 
-            throw new RuntimeException(
-                    "Invalid OTP"
-            );
-        }
+                        .email(email)
 
+                        .otp("VERIFIED")
+
+                        .expiresAt(
+                                LocalDateTime.now()
+                                        .plusMinutes(5)
+                        )
+
+                        .build();
+
+        otpRepository.save(verifiedState);
 
         return "OTP verified successfully";
     }
@@ -360,48 +333,46 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
+        // =================================================
+        // CHECK VERIFIED OTP STATE
+        // =================================================
 
-        String otp = request.getOtp()
-                .trim();
-
-
-        // Find latest OTP
-
-        PasswordResetOtp resetOtp =
+        PasswordResetOtp resetState =
                 otpRepository
                         .findTopByEmailOrderByIdDesc(email)
-
                         .orElseThrow(
                                 () -> new RuntimeException(
-                                        "OTP not found"
+                                        "Please verify OTP first"
                                 )
                         );
 
+        // Make sure OTP was actually verified
 
-        // Check OTP expiry
+        if (!"VERIFIED".equals(
+                resetState.getOtp()
+        )) {
 
-        if (resetOtp.getExpiresAt()
+            throw new RuntimeException(
+                    "Please verify OTP first"
+            );
+        }
+
+        // Check verification expiry
+
+        if (resetState.getExpiresAt()
                 .isBefore(LocalDateTime.now())) {
 
-            otpRepository.delete(resetOtp);
+            otpRepository.delete(resetState);
 
             throw new RuntimeException(
-                    "OTP has expired"
+                    "OTP verification has expired. Please request a new OTP."
             );
         }
 
 
-        // Verify OTP
-
-        if (!resetOtp.getOtp().equals(otp)) {
-
-            throw new RuntimeException(
-                    "Invalid OTP"
-            );
-        }
-
-
-        // Validate new password
+        // =================================================
+        // VALIDATE NEW PASSWORD
+        // =================================================
 
         if (request.getNewPassword() == null ||
                 request.getNewPassword()
@@ -413,7 +384,6 @@ public class AuthService {
             );
         }
 
-
         if (request.getNewPassword().length() < 6) {
 
             throw new RuntimeException(
@@ -422,11 +392,12 @@ public class AuthService {
         }
 
 
-        // Find user
+        // =================================================
+        // FIND USER
+        // =================================================
 
         User user = repository
                 .findByEmail(email)
-
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "User not found"
@@ -434,7 +405,9 @@ public class AuthService {
                 );
 
 
-        // Encode new password
+        // =================================================
+        // UPDATE PASSWORD
+        // =================================================
 
         user.setPassword(
                 encoder.encode(
@@ -442,14 +415,15 @@ public class AuthService {
                 )
         );
 
-
         repository.save(user);
 
 
-        // Delete OTP after successful reset
+        // =================================================
+        // DELETE VERIFIED STATE
+        // Prevent reuse
+        // =================================================
 
-        otpRepository.delete(resetOtp);
-
+        otpRepository.delete(resetState);
 
         return "Password reset successfully";
     }
